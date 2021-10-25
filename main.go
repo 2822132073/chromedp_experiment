@@ -1,16 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/chromedp/cdproto/cdp"
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/tidwall/gjson"
-	"golang.org/x/text/encoding/simplifiedchinese"
-	"golang.org/x/text/transform"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -54,15 +50,13 @@ func ParseSlice(s []*string) []IP {
 	}
 	return lip
 }
-
 func GetTrString(n int, s *string) chromedp.Tasks {
 	xpath := fmt.Sprintf("//*[@id=\"grid\"]/div/table/tbody/tr[%d]", n)
 	return chromedp.Tasks{
 		chromedp.TextContent(xpath, s),
 	}
 }
-
-func Refund(user, pwd, id, softid string) string {
+func Refund(user, pwd, id, softid string) {
 	client := &http.Client{}
 	var req *http.Request
 	var resp *http.Response
@@ -88,29 +82,23 @@ func Refund(user, pwd, id, softid string) string {
 	if err != nil {
 		fmt.Println(err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
 	body, err = ioutil.ReadAll(resp.Body)
 	r := gjson.Parse(string(body))
 	if r.Get("err_str").String() != "OK" {
 		fmt.Printf("refund Error : %s\n", r.Get("err_str").String())
-		return r.Get("err_str").String()
 	}
-	return ""
 }
 func InputVerifyCode(verifyCode string) chromedp.Tasks {
 	return chromedp.Tasks{
 		chromedp.SendKeys(`//*[@id="verify"]`, verifyCode),
 		chromedp.WaitVisible(`//*[@id="button"]`),
 		chromedp.Click(`//*[@id="button"]`),
-		chromedp.Sleep(3 * time.Second),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			cookies, err := network.GetAllCookies().Do(ctx)
-			if err != nil {
-				return err
-			}
-			Cookie = cookies[0].Value
-			return err
-		}),
 		chromedp.Sleep(1 * time.Second),
 	}
 }
@@ -125,81 +113,6 @@ func getEncodedBase64(file []byte) string {
 	encoded := base64.StdEncoding.EncodeToString(file)
 	return encoded
 }
-
-//func GetHtmlFile() []byte {
-//	urlString := "https://119.97.153.194:85/CFluxStatistic.php?sid=" + Cookie
-//	fmt.Println(urlString)
-//	tr := &http.Transport{
-//		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-//	}
-//	client := &http.Client{Transport: tr}
-//	var req *http.Request
-//	var resp *http.Response
-//	var err error
-//	var body []byte
-//	parameters := url.Values{}
-//	parameters.Add("stat_method", "ip_user")
-//	parameters.Add("rank_base", "total_flow")
-//	parameters.Add("custDate", "0")
-//	parameters.Add("startDateTime", "2021-10-22 07:00")
-//	parameters.Add("endDateTime", "2021-10-22 08:00")
-//	parameters.Add("view_num", "10")
-//	parameters.Add("schedule", "0")
-//	parameters.Add("sourceType", "")
-//	parameters.Add("sourceIp", "")
-//	parameters.Add("sourceUser", "")
-//	parameters.Add("sourceGroup", "")
-//	parameters.Add("sub_group", "")
-//	parameters.Add("appTypeText", "所有应用")
-//	parameters.Add("appType", "0")
-//	parameters.Add("appName", "0")
-//	parameters.Add("graph_type", "0")
-//	parameters.Add("formState", "unwrap")
-//	parameters.Add("curPage", "1")
-//	parameters.Add("type", "report")
-//	parameters.Add("sid", Cookie)
-//	parameters.Add("progressive", "true")
-//	req, err = http.NewRequest("POST", urlString, strings.NewReader(parameters.Encode()))
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	refer := "https://119.97.153.194:85/CFluxStatistic.php?custDate=0&startDateTime=2021-10-22%2007%3A00&endDateTime=2021-10-22%2008%3A00&schedule=0&sourceType=all&sourceIp=&sourceUser=&sourceGroup=&sub_group=1&appTypeText=%E6%89%80%E6%9C%89%E5%BA%94%E7%94%A8&appType=0&appName=0&stat_method=app_type&rank_base=total_flow&graph_type=0&view_num=10&formState=wrap&curPage=1&act=report&type=view&sid=" + Cookie
-//	req.Header.Set("Accept", "text/html, */*;q=0.01")
-//	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
-//	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9")
-//	req.Header.Set("Connection", "keep-alive")
-//	req.Header.Set("Content-Length", "369")
-//	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-//	req.Header.Set("Cookie", "PHPSESSID="+Cookie)
-//	req.Header.Set("Host", "119.97.153.194")
-//	req.Header.Set("Origin", "https")
-//	req.Header.Set("Referer", refer)
-//	//req.Header.Set("sec-ch-ua",'')
-//	req.Header.Set("sec-ch-ua-mobile", "?0")
-//	//req.Header.Set("sec-ch-ua-platform"," "Windows"")
-//	req.Header.Set("Sec-Fetch-Dest", "empty")
-//	req.Header.Set("Sec-Fetch-Mode", "cors")
-//	req.Header.Set("Sec-Fetch-Site", "same-origin")
-//	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.54 Safari/537.36")
-//	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-//
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	resp, err = client.Do(req)
-//	fmt.Println(resp.Header)
-//	fmt.Println(resp.Cookies())
-//	fmt.Println(resp.Request)
-//	fmt.Println(resp.Status)
-//	fmt.Println(resp.Uncompressed)
-//
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	body, _ = ioutil.ReadAll(resp.Body)
-//	return body
-//}
-
 func GetVerifyCode(user, pass, softid, codetype, len_min string, file []byte) gjson.Result {
 	client := &http.Client{}
 	var req *http.Request
@@ -241,19 +154,9 @@ func GetVerifyCode(user, pass, softid, codetype, len_min string, file []byte) gj
 	}
 	return r
 }
-
-func Decode(s []byte) ([]byte, error) {
-	I := bytes.NewReader(s)
-	O := transform.NewReader(I, simplifiedchinese.GBK.NewDecoder())
-	d, e := ioutil.ReadAll(O)
-	if e != nil {
-		return nil, e
-	}
-	return d, nil
-}
-
 func GetContent(begin, end string) chromedp.Tasks {
 	return chromedp.Tasks{
+		chromedp.Sleep(3 * time.Second),
 		chromedp.Click(`//*[@id="Accordion1"]/div[1]/div[2]/div/dl/dd[3]/a`),
 		chromedp.Sleep(1 * time.Second),
 		chromedp.Click(`//*[@id="fush"]`),
@@ -264,10 +167,12 @@ func GetContent(begin, end string) chromedp.Tasks {
 		chromedp.Sleep(500 * time.Millisecond),
 		chromedp.Click(`//*[@id="timpSelector"]`),
 		chromedp.Sleep(500 * time.Millisecond),
-		chromedp.Click(`//*[@id="cpStart"]`),
-		chromedp.SendKeys(`//*[@id="cpStart"]`, "\b\b\b\b\b\b\b\b\b\b\b\b\b"+begin),
-		chromedp.Click(`//*[@id="cpEnd"]`),
-		chromedp.SendKeys(`//*[@id="cpEnd"]`, "\b\b\b\b\b\b\b\b\b\b\b\b\b"+end),
+		chromedp.SetValue(`//*[@id="cpStart"]`, begin),
+		chromedp.SetValue(`//*[@id="cpEnd"]`, end),
+		//chromedp.Click(`//*[@id="cpStart"]`),
+		//chromedp.SendKeys(`//*[@id="cpStart"]`, "\b\b\b\b\b\b\b\b\b\b\b\b\b"+begin),
+		//chromedp.Click(`//*[@id="cpEnd"]`),
+		//chromedp.SendKeys(`//*[@id="cpEnd"]`, "\b\b\b\b\b\b\b\b\b\b\b\b\b"+end),
 		chromedp.Click(`//*[@id="sure"]`),
 		chromedp.Sleep(500 * time.Microsecond),
 		chromedp.Click(`//*[@id="querybtn"]/span/strong`),
@@ -285,7 +190,6 @@ func GetTime() (string, string) {
 	begin := ago.Format("15:04")
 	return begin, end
 }
-
 func InqueryData(begin, end string) chromedp.Tasks {
 	return chromedp.Tasks{
 		chromedp.Sleep(1 * time.Second),
@@ -298,10 +202,8 @@ func InqueryData(begin, end string) chromedp.Tasks {
 		chromedp.Click(`//*[@id="sure"]`),
 	}
 }
-
 func GetIpSlice(taskCtx context.Context) []IP {
 	SLice := make([]*string, 0, 10)
-	//fmt.Println(Cookie)
 	for i := 1; i < 11; i++ {
 		s := new(string)
 		_ = chromedp.Run(taskCtx, GetTrString(i, s))
@@ -310,9 +212,8 @@ func GetIpSlice(taskCtx context.Context) []IP {
 	ip := ParseSlice(SLice)
 	return ip
 }
-
 func Login(taskCtx context.Context) bool {
-	var chromeNodes []*cdp.Node
+	s := new(string)
 	picByte := new([]byte)
 	user := "admin"
 	passwd := "5Hfw1!2@h!&!"
@@ -322,49 +223,42 @@ func Login(taskCtx context.Context) bool {
 	}
 	r := GetVerifyCode("2822132073", "fsl2000.", "3a90e8c04865c7d3ba2526ff47e9d11b", "1004", "4", *picByte)
 	verifyCode := r.Get("pic_str").Str
-	//fmt.Println(verifyCode)
-	taskCtx, _ = context.WithTimeout(taskCtx, 5*time.Second)
 	err = chromedp.Run(taskCtx, InputVerifyCode(verifyCode))
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = chromedp.Run(taskCtx, chromedp.Nodes(`//*[@id="user_id"]`, &chromeNodes))
-	if err != nil || chromeNodes == nil {
-		picByte = new([]byte)
-		e := Refund("2822132073", "fsl2000.", r.Get("pic_id").String(), "3a90e8c04865c7d3ba2526ff47e9d11b")
-		if e != "" {
-			fmt.Printf("Refund Error: %s\n", e)
-		} else {
-			fmt.Println("Success Refund !")
-		}
-		return false
-	} else {
-		log.Println("Success Login!")
+	err = chromedp.Run(taskCtx, chromedp.InnerHTML(`/`, s))
+	if err != nil {
+		log.Fatal(err)
+	}
+	ok, err := regexp.MatchString(".*<input class=\"input_text\" type=\"password\" autocomplete=\"off\" disablautocomplete=\"\" id=\"password\" style=\"background-color: rgb(226, 237, 252);\">.*", *s)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !ok {
 		return true
+	} else {
+		Refund("2822132073", "fsl2000.", r.Get("pic_id").String(), "3a90e8c04865c7d3ba2526ff47e9d11b")
+		return false
 	}
 }
-
 func attemptLogin() (context.Context, context.CancelFunc) {
 	for true {
 		taskCtx, cancel := GetChromedp(context.Background())
 		ok := Login(taskCtx)
 		if !ok {
-			fmt.Println("登录失败!")
 			cancel()
-			time.Sleep(10 * time.Second)
+			fmt.Println("Login Failed , log in again !")
+			time.Sleep(3 * time.Second)
 		} else {
+			fmt.Println("Login Success !!")
 			return taskCtx, cancel
 		}
 	}
 	return nil, nil
 }
-
 func Run() {
 	taskCtx, cancel := attemptLogin()
-	if taskCtx == nil {
-		fmt.Println("登录失败!")
-		return
-	}
 	defer cancel()
 	err := chromedp.Run(taskCtx, GetContent(GetTime()))
 	i := 0
@@ -412,15 +306,17 @@ func SendDingMsg(msg string) {
 	//发送请求
 	resp, err := client.Do(req)
 	//关闭请求
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
 
 	if err != nil {
 		fmt.Println(err)
 	}
 }
-
-var Cookie string
-
 func main() {
 	Run()
 }
