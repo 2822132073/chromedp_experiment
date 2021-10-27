@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -42,13 +43,46 @@ func ParseSlice(s []*string) []IP {
 		unnecessaryChar, _ := regexp.Compile("[ \\- ,]")
 		fs := unnecessaryChar.ReplaceAllString(*s, "")
 		ls := strings.Split(fs, "\n")
-		ip.ip = ls[1]
-		ip.up = ls[4]
-		ip.down = ls[5]
-		ip.all = ls[6]
+		if ConvertUnit(ls[6]) > 1 {
+			ip.ip = ls[1]
+			ip.up = strconv.FormatFloat(ConvertUnit(ls[4]), 'f', 2, 64) + "GB"
+			ip.down = strconv.FormatFloat(ConvertUnit(ls[5]), 'f', 2, 64) + "GB"
+			ip.all = strconv.FormatFloat(ConvertUnit(ls[6]), 'f', 2, 64) + "GB"
+
+		}
 		lip = append(lip, ip)
 	}
 	return lip
+}
+
+func ConvertUnit(s string) float64 {
+	n, err := regexp.Compile("[0-9]*")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if strings.Contains(s, "KB") {
+		i, err := strconv.ParseFloat(n.FindString(s), 64)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// KB转换成MB,再转换成GB
+		i = i / 1024 / 1024
+		//s = strconv.FormatFloat(i, 'f', 4, 64) + "GB"
+		return i
+	} else if strings.Contains(s, "MB") {
+		i, err := strconv.ParseFloat(n.FindString(s), 64)
+		if err != nil {
+			log.Fatal(err)
+		}
+		i = i / 1024
+		//s = strconv.FormatFloat(i, 'f', 4, 64) + "GB"
+		return i
+	}
+	i, err := strconv.ParseFloat(n.FindString(s), 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return i
 }
 func GetTrString(n int, s *string) chromedp.Tasks {
 	xpath := fmt.Sprintf("//*[@id=\"grid\"]/div/table/tbody/tr[%d]", n)
@@ -99,7 +133,7 @@ func InputVerifyCode(verifyCode string) chromedp.Tasks {
 		chromedp.SendKeys(`//*[@id="verify"]`, verifyCode),
 		chromedp.WaitVisible(`//*[@id="button"]`),
 		chromedp.Click(`//*[@id="button"]`),
-		chromedp.Sleep(1 * time.Second),
+		chromedp.Sleep(2 * time.Second),
 	}
 }
 func GetChromedp(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -257,6 +291,14 @@ func attemptLogin() (context.Context, context.CancelFunc) {
 	}
 	return nil, nil
 }
+func GenerateMsg(taskCtx context.Context, b, e string) string {
+	ip := GetIpSlice(taskCtx)
+	msg := fmt.Sprintf("B%s --> %s 数据如下\n%-25s%-18s%-19s%-20s\n", b, e, "IP", "发送", "接收", "all")
+	for _, i := range ip {
+		msg = msg + fmt.Sprintf("%-25s%-20s%-20s%-20s\n", i.ip, i.up, i.down, i.all)
+	}
+	return msg
+}
 func Run() {
 	taskCtx, cancel := attemptLogin()
 	defer cancel()
@@ -269,19 +311,14 @@ func Run() {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		ip := GetIpSlice(taskCtx)
-		msg := fmt.Sprintf("B%s --> %s 数据如下\n%-25s%-25s%-25s%-25s\n", b, e, "IP", "发送", "接收", "all")
-		for _, i := range ip {
-			msg = msg + fmt.Sprintf("%-25s%-20s%-20s%-20s\n", i.ip, i.up, i.down, i.all)
-		}
-		fmt.Printf("%s --> %s 数据如下\n", b, e)
+		msg := GenerateMsg(taskCtx, b, e)
 		if strings.Contains(b, "00") || strings.Contains(e, "00") {
 			fmt.Println(msg)
 			SendDingMsg(msg)
 		} else {
 			fmt.Println(msg)
 		}
-		time.Sleep(60 * time.Second)
+		time.Sleep(1 * time.Minute)
 		i++
 	}
 	if err != nil {
