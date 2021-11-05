@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/chromedp/chromedp"
 	"github.com/tidwall/gjson"
+	"go.uber.org/zap"
 	"io"
 	"io/ioutil"
 	"log"
@@ -16,6 +17,33 @@ import (
 	"strings"
 	"time"
 )
+
+const (
+	product = `https://oapi.dingtalk.com/robot/send?access_token=84618677bead498eeeedc13a5147c3e74976e393e102c03294a2708d9ebff425`
+	test    = `https://oapi.dingtalk.com/robot/send?access_token=54c9756ab0bc12626ae7332cef3694f8eb6f9c8111fea9c513da8338bed2ee52`
+	LogFile = "brower_auto.log"
+)
+
+var (
+	Logger *zap.Logger
+	Sugar  *zap.SugaredLogger
+)
+
+type IP struct {
+	ip   string
+	up   string
+	down string
+	all  string
+}
+
+func init() {
+
+	developConfig := zap.NewDevelopmentConfig()
+	developConfig.OutputPaths = append(developConfig.OutputPaths, LogFile)
+	developConfig.ErrorOutputPaths = append(developConfig.OutputPaths, LogFile)
+	Logger, _ = developConfig.Build()
+	Sugar = Logger.Sugar()
+}
 
 func InputUserPwd(user, passwd string, picByte *[]byte) chromedp.Tasks {
 	return chromedp.Tasks{
@@ -28,12 +56,37 @@ func InputUserPwd(user, passwd string, picByte *[]byte) chromedp.Tasks {
 		chromedp.Screenshot(`//*[@id="verify_code"]`, picByte),
 	}
 }
+func SendDingMsg(msg string, webHook string) {
+	//请求地址模板
+	//webHook := `https://oapi.dingtalk.com/robot/send?access_token=2e83953407705096cf645dbc21cbcab9e3047ddaecb1a2afb3a7cb8091a40435`
+	content := `{"msgtype": "text",
+		"text": {"content": "` + msg + `test"}
+	}`
+	//创建一个请求
+	req, err := http.NewRequest("POST", webHook, strings.NewReader(content))
+	if err != nil {
+		fmt.Println(err)
+	}
 
-type IP struct {
-	ip   string
-	up   string
-	down string
-	all  string
+	client := &http.Client{}
+	//设置请求头
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	//发送请求
+	resp, err := client.Do(req)
+	if resp.Status != "200 OK" {
+		Sugar.Warn("Send msg error:", resp.Status, resp.Body)
+	}
+	//关闭请求
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
+
+	if err != nil {
+		Sugar.Warn(err)
+	}
 }
 
 func ParseSlice(s []*string) []IP {
@@ -48,9 +101,8 @@ func ParseSlice(s []*string) []IP {
 			ip.up = strconv.FormatFloat(ConvertUnit(ls[4]), 'f', 2, 64) + "GB"
 			ip.down = strconv.FormatFloat(ConvertUnit(ls[5]), 'f', 2, 64) + "GB"
 			ip.all = strconv.FormatFloat(ConvertUnit(ls[6]), 'f', 2, 64) + "GB"
-
+			lip = append(lip, ip)
 		}
-		lip = append(lip, ip)
 	}
 	return lip
 }
@@ -58,12 +110,12 @@ func ParseSlice(s []*string) []IP {
 func ConvertUnit(s string) float64 {
 	n, err := regexp.Compile("[0-9]*")
 	if err != nil {
-		log.Fatal(err)
+		Sugar.Warn(err)
 	}
 	if strings.Contains(s, "KB") {
 		i, err := strconv.ParseFloat(n.FindString(s), 64)
 		if err != nil {
-			log.Fatal(err)
+			Sugar.Warn(err)
 		}
 		// KB转换成MB,再转换成GB
 		i = i / 1024 / 1024
@@ -72,15 +124,14 @@ func ConvertUnit(s string) float64 {
 	} else if strings.Contains(s, "MB") {
 		i, err := strconv.ParseFloat(n.FindString(s), 64)
 		if err != nil {
-			log.Fatal(err)
+			Sugar.Warn(err)
 		}
 		i = i / 1024
-		//s = strconv.FormatFloat(i, 'f', 4, 64) + "GB"
 		return i
 	}
 	i, err := strconv.ParseFloat(n.FindString(s), 64)
 	if err != nil {
-		log.Fatal(err)
+		Sugar.Warn(err)
 	}
 	return i
 }
@@ -104,13 +155,13 @@ func Refund(user, pwd, id, softid string) {
 	parameters.Add("id", id)
 	req, err = http.NewRequest("POST", urlString, strings.NewReader(parameters.Encode()))
 	if err != nil {
-		log.Fatal(err)
+		Sugar.Warn(err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0)")
 	req.Header.Set("Connection", "Keep-Alive")
 	if err != nil {
-		log.Fatal(err)
+		Sugar.Warn(err)
 	}
 	resp, err = client.Do(req)
 	if err != nil {
@@ -139,7 +190,8 @@ func InputVerifyCode(verifyCode string) chromedp.Tasks {
 func GetChromedp(ctx context.Context) (context.Context, context.CancelFunc) {
 	options := chromedp.DefaultExecAllocatorOptions[:]
 	options = append(options, chromedp.Flag("headless", false), chromedp.Flag("ignore-certificate-errors", "1"))
-	c, cancel := chromedp.NewExecAllocator(ctx, options...)
+	cctx, cancel := context.WithCancel(ctx)
+	c, cancel := chromedp.NewExecAllocator(cctx, options...)
 	taskCtx, _ := chromedp.NewContext(c, chromedp.WithLogf(log.Printf))
 	return taskCtx, cancel
 }
@@ -164,13 +216,13 @@ func GetVerifyCode(user, pass, softid, codetype, len_min string, file []byte) gj
 	parameters.Add("file_base64", getEncodedBase64(file))
 	req, err = http.NewRequest("POST", urlString, strings.NewReader(parameters.Encode()))
 	if err != nil {
-		log.Fatal(err)
+		Sugar.Warn(err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 5.1; Trident/4.0)")
 	req.Header.Set("Connection", "Keep-Alive")
 	if err != nil {
-		log.Fatal(err)
+		Sugar.Warn(err)
 	}
 	resp, err = client.Do(req)
 	if err != nil {
@@ -178,7 +230,7 @@ func GetVerifyCode(user, pass, softid, codetype, len_min string, file []byte) gj
 	}
 	body, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal(err)
+		Sugar.Warn(err)
 	}
 	var b = string(body)
 	r := gjson.Parse(b)
@@ -190,23 +242,21 @@ func GetVerifyCode(user, pass, softid, codetype, len_min string, file []byte) gj
 }
 func GetContent(begin, end string) chromedp.Tasks {
 	return chromedp.Tasks{
-		chromedp.Sleep(3 * time.Second),
+		chromedp.WaitVisible(`//*[@id="Accordion1"]/div[1]/div[2]/div/dl/dd[3]/a`),
+		//chromedp.Sleep(3 * time.Second),
 		chromedp.Click(`//*[@id="Accordion1"]/div[1]/div[2]/div/dl/dd[3]/a`),
-		chromedp.Sleep(1 * time.Second),
+		//chromedp.Sleep(2 * time.Second),
+		chromedp.WaitReady(`#fush`, chromedp.ByQuery),
 		chromedp.Click(`//*[@id="fush"]`),
-		chromedp.Sleep(500 * time.Millisecond),
+		chromedp.Sleep(1000 * time.Millisecond),
 		chromedp.Click(`//*[@id="type4"]`),
-		chromedp.Sleep(500 * time.Millisecond),
+		chromedp.Sleep(1000 * time.Millisecond),
 		chromedp.SendKeys(`//*[@id="timpSelector"]`, "自定义"),
-		chromedp.Sleep(500 * time.Millisecond),
+		chromedp.Sleep(1000 * time.Millisecond),
 		chromedp.Click(`//*[@id="timpSelector"]`),
-		chromedp.Sleep(500 * time.Millisecond),
+		chromedp.Sleep(1000 * time.Millisecond),
 		chromedp.SetValue(`//*[@id="cpStart"]`, begin),
 		chromedp.SetValue(`//*[@id="cpEnd"]`, end),
-		//chromedp.Click(`//*[@id="cpStart"]`),
-		//chromedp.SendKeys(`//*[@id="cpStart"]`, "\b\b\b\b\b\b\b\b\b\b\b\b\b"+begin),
-		//chromedp.Click(`//*[@id="cpEnd"]`),
-		//chromedp.SendKeys(`//*[@id="cpEnd"]`, "\b\b\b\b\b\b\b\b\b\b\b\b\b"+end),
 		chromedp.Click(`//*[@id="sure"]`),
 		chromedp.Sleep(500 * time.Microsecond),
 		chromedp.Click(`//*[@id="querybtn"]/span/strong`),
@@ -222,7 +272,10 @@ func GetTime() (string, string) {
 	ago := now.Add(subOneHour)
 	end := now.Format("15:04")
 	begin := ago.Format("15:04")
-	return begin, end
+	if now.Hour() >= ago.Hour() {
+		return begin, end
+	}
+	return "", ""
 }
 func InqueryData(begin, end string) chromedp.Tasks {
 	return chromedp.Tasks{
@@ -257,18 +310,17 @@ func Login(taskCtx context.Context) bool {
 	}
 	r := GetVerifyCode("2822132073", "fsl2000.", "3a90e8c04865c7d3ba2526ff47e9d11b", "1004", "4", *picByte)
 	verifyCode := r.Get("pic_str").Str
-	err = chromedp.Run(taskCtx, InputVerifyCode(verifyCode))
+	Logger.Info("verify code", zap.String("verifyCode", verifyCode))
+	err = chromedp.Run(taskCtx, InputVerifyCode(verifyCode+"a"))
 	if err != nil {
-		log.Fatal(err)
+		Sugar.Warn(err)
 	}
 	err = chromedp.Run(taskCtx, chromedp.InnerHTML(`/`, s))
+	fmt.Println(*s)
 	if err != nil {
-		log.Fatal(err)
+		Sugar.Warn(err)
 	}
-	ok, err := regexp.MatchString(".*<input class=\"input_text\" type=\"password\" autocomplete=\"off\" disablautocomplete=\"\" id=\"password\" style=\"background-color: rgb(226, 237, 252);\">.*", *s)
-	if err != nil {
-		log.Fatal(err)
-	}
+	ok := strings.Contains(*s, "欢迎登录")
 	if !ok {
 		return true
 	} else {
@@ -276,20 +328,63 @@ func Login(taskCtx context.Context) bool {
 		return false
 	}
 }
-func attemptLogin() (context.Context, context.CancelFunc) {
+func attemptLogin(ctx context.Context) (context.Context, context.CancelFunc) {
 	for true {
-		taskCtx, cancel := GetChromedp(context.Background())
+		taskCtx, cancel := GetChromedp(ctx)
 		ok := Login(taskCtx)
 		if !ok {
 			cancel()
-			fmt.Println("Login Failed , log in again !")
+			Logger.Info("Login Failed , log in again !")
 			time.Sleep(3 * time.Second)
 		} else {
-			fmt.Println("Login Success !!")
+			Logger.Info("Login Success !!")
 			return taskCtx, cancel
 		}
 	}
 	return nil, nil
+}
+func GetDateFromWebAndSendMsg(ctx context.Context, Live chan int, dead chan int) {
+	taskCtx, cancel := attemptLogin(ctx)
+	err := chromedp.Run(taskCtx, GetContent(GetTime()))
+	if err != nil {
+		fmt.Println(err)
+	}
+	go func() {
+		for true {
+			select {
+			case <-Live:
+				Logger.Info("Receive signal from channel")
+				b, e := GetTime()
+				if b != "" {
+					err = chromedp.Run(taskCtx, InqueryData(b, e))
+					if err != nil {
+						Sugar.Error(err)
+						return
+					}
+					msg := GenerateMsg(taskCtx, b, e)
+					if strings.Contains(strings.Split(e, ":")[1], "00") {
+						fmt.Println(msg)
+						SendDingMsg(msg, product)
+						Logger.Info("Send msg to AlterGroup")
+					} else {
+						fmt.Println(msg)
+						SendDingMsg(msg, test)
+						Logger.Info("Send msg to DebugGroup")
+					}
+				}
+			}
+		}
+	}()
+	go func() {
+		for true {
+			select {
+			case <-dead:
+				Sugar.Warn("goroutine receive exit signal,aborting.....")
+				cancel()
+				return
+			}
+		}
+	}()
 }
 func GenerateMsg(taskCtx context.Context, b, e string) string {
 	ip := GetIpSlice(taskCtx)
@@ -300,60 +395,36 @@ func GenerateMsg(taskCtx context.Context, b, e string) string {
 	return msg
 }
 func Run() {
-	taskCtx, cancel := attemptLogin()
-	defer cancel()
-	err := chromedp.Run(taskCtx, GetContent(GetTime()))
+	Live := make(chan int)
+	Dead := make(chan int)
+	ctx := context.Background()
+	GetDateFromWebAndSendMsg(ctx, Live, Dead)
+	go func() {
+		for true {
+			Logger.Info("Send signal to channel")
+			Live <- 1
+			time.Sleep(60 * time.Second)
+		}
+	}()
 	i := 0
 	for true {
-		fmt.Println(i)
-		b, e := GetTime()
-		err = chromedp.Run(taskCtx, InqueryData(b, e))
-		if err != nil {
-			log.Fatalln(err)
+		select {
+		case <-Live:
+			i++
+			Logger.Warn("Detect getData dead", zap.Int("number", i))
+			if i >= 2 {
+				Logger.Warn("Restart GetData goroutine")
+				GetDateFromWebAndSendMsg(ctx, Live, Dead)
+				Sugar.Warn("Detect last goroutine happen error,send dead signal to the gorouitine")
+				Dead <- 1
+				i = 0
+			}
+		default:
+			time.Sleep(5 * time.Second)
 		}
-		msg := GenerateMsg(taskCtx, b, e)
-		if strings.Contains(b, "00") || strings.Contains(e, "00") {
-			fmt.Println(msg)
-			SendDingMsg(msg)
-		} else {
-			fmt.Println(msg)
-		}
-		time.Sleep(1 * time.Minute)
-		i++
-	}
-	if err != nil {
-		fmt.Println(err)
 	}
 }
-func SendDingMsg(msg string) {
-	//请求地址模板
-	webHook := `https://oapi.dingtalk.com/robot/send?access_token=2e83953407705096cf645dbc21cbcab9e3047ddaecb1a2afb3a7cb8091a40435`
-	content := `{"msgtype": "text",
-		"text": {"content": "` + msg + `test"}
-	}`
-	//创建一个请求
-	req, err := http.NewRequest("POST", webHook, strings.NewReader(content))
-	if err != nil {
-		fmt.Println(err)
-	}
 
-	client := &http.Client{}
-	//设置请求头
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	//发送请求
-	resp, err := client.Do(req)
-	//关闭请求
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-
-		}
-	}(resp.Body)
-
-	if err != nil {
-		fmt.Println(err)
-	}
-}
 func main() {
 	Run()
 }
