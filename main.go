@@ -184,7 +184,7 @@ func InputVerifyCode(verifyCode string) chromedp.Tasks {
 		chromedp.SendKeys(`//*[@id="verify"]`, verifyCode),
 		chromedp.WaitVisible(`//*[@id="button"]`),
 		chromedp.Click(`//*[@id="button"]`),
-		chromedp.Sleep(2 * time.Second),
+		chromedp.Sleep(3 * time.Second),
 	}
 }
 func GetChromedp(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -242,27 +242,26 @@ func GetVerifyCode(user, pass, softid, codetype, len_min string, file []byte) gj
 }
 func GetContent(begin, end string) chromedp.Tasks {
 	return chromedp.Tasks{
-		chromedp.WaitVisible(`//*[@id="Accordion1"]/div[1]/div[2]/div/dl/dd[3]/a`),
-		//chromedp.Sleep(3 * time.Second),
+		chromedp.Sleep(3 * time.Second),
 		chromedp.Click(`//*[@id="Accordion1"]/div[1]/div[2]/div/dl/dd[3]/a`),
-		//chromedp.Sleep(2 * time.Second),
-		chromedp.WaitReady(`#fush`, chromedp.ByQuery),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			Sugar.Info("click 流量统计 success")
+			return nil
+		}),
+		chromedp.Sleep(5 * time.Second),
 		chromedp.Click(`//*[@id="fush"]`),
-		chromedp.Sleep(1000 * time.Millisecond),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			Sugar.Info("click 详细信息 success")
+			return nil
+		}),
 		chromedp.Click(`//*[@id="type4"]`),
-		chromedp.Sleep(1000 * time.Millisecond),
 		chromedp.SendKeys(`//*[@id="timpSelector"]`, "自定义"),
-		chromedp.Sleep(1000 * time.Millisecond),
 		chromedp.Click(`//*[@id="timpSelector"]`),
-		chromedp.Sleep(1000 * time.Millisecond),
 		chromedp.SetValue(`//*[@id="cpStart"]`, begin),
 		chromedp.SetValue(`//*[@id="cpEnd"]`, end),
 		chromedp.Click(`//*[@id="sure"]`),
-		chromedp.Sleep(500 * time.Microsecond),
 		chromedp.Click(`//*[@id="querybtn"]/span/strong`),
-		chromedp.Sleep(500 * time.Millisecond),
 		chromedp.Click(`//*[@id="newtab"]`),
-		chromedp.Sleep(200 * time.Millisecond),
 		chromedp.Click(`//*[@id="sure"]`),
 	}
 }
@@ -283,9 +282,9 @@ func InqueryData(begin, end string) chromedp.Tasks {
 		chromedp.Click(`//*[@id="querybtn"]/span/strong`),
 		chromedp.Sleep(500 * time.Millisecond),
 		chromedp.Click(`//*[@id="cpStart"]`),
-		chromedp.SendKeys(`//*[@id="cpStart"]`, "\b\b\b\b\b\b"+begin),
+		chromedp.SetValue(`//*[@id="cpStart"]`, begin),
 		chromedp.Click(`//*[@id="cpEnd"]`),
-		chromedp.SendKeys(`//*[@id="cpEnd"]`, "\b\b\b\b\b\b"+end),
+		chromedp.SetValue(`//*[@id="cpEnd"]`, end),
 		chromedp.Click(`//*[@id="sure"]`),
 	}
 }
@@ -311,12 +310,12 @@ func Login(taskCtx context.Context) bool {
 	r := GetVerifyCode("2822132073", "fsl2000.", "3a90e8c04865c7d3ba2526ff47e9d11b", "1004", "4", *picByte)
 	verifyCode := r.Get("pic_str").Str
 	Logger.Info("verify code", zap.String("verifyCode", verifyCode))
-	err = chromedp.Run(taskCtx, InputVerifyCode(verifyCode+"a"))
+	err = chromedp.Run(taskCtx, InputVerifyCode(verifyCode))
 	if err != nil {
 		Sugar.Warn(err)
 	}
+	//Refund("2822132073", "fsl2000.", r.Get("pic_id").String(), "3a90e8c04865c7d3ba2526ff47e9d11b")
 	err = chromedp.Run(taskCtx, chromedp.InnerHTML(`/`, s))
-	fmt.Println(*s)
 	if err != nil {
 		Sugar.Warn(err)
 	}
