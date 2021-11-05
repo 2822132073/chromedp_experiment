@@ -58,7 +58,7 @@ func InputUserPwd(user, passwd string, picByte *[]byte) chromedp.Tasks {
 }
 func SendDingMsg(msg string, webHook string) {
 	//请求地址模板
-	//webHook := `https://oapi.dingtalk.com/robot/send?access_token=2e83953407705096cf645dbc21cbcab9e3047ddaecb1a2afb3a7cb8091a40435`
+	//webHook := ``
 	content := `{"msgtype": "text",
 		"text": {"content": "` + msg + `test"}
 	}`
@@ -307,14 +307,13 @@ func Login(taskCtx context.Context) bool {
 	if err != nil {
 		fmt.Println(err)
 	}
-	r := GetVerifyCode("2822132073", "fsl2000.", "3a90e8c04865c7d3ba2526ff47e9d11b", "1004", "4", *picByte)
+	r := GetVerifyCode("", "", "", "1004", "4", *picByte)
 	verifyCode := r.Get("pic_str").Str
 	Logger.Info("verify code", zap.String("verifyCode", verifyCode))
 	err = chromedp.Run(taskCtx, InputVerifyCode(verifyCode))
 	if err != nil {
 		Sugar.Warn(err)
 	}
-	//Refund("2822132073", "fsl2000.", r.Get("pic_id").String(), "3a90e8c04865c7d3ba2526ff47e9d11b")
 	err = chromedp.Run(taskCtx, chromedp.InnerHTML(`/`, s))
 	if err != nil {
 		Sugar.Warn(err)
@@ -323,7 +322,7 @@ func Login(taskCtx context.Context) bool {
 	if !ok {
 		return true
 	} else {
-		Refund("2822132073", "fsl2000.", r.Get("pic_id").String(), "3a90e8c04865c7d3ba2526ff47e9d11b")
+		Refund("", "", r.Get("pic_id").String(), "")
 		return false
 	}
 }
